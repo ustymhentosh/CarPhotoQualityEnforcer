@@ -82,3 +82,23 @@ class CarOrNot:
         x.unsqueeze_(0)
         prediction = self.model(x)
         return CarOrNot.classes[argmax(prediction.detach().numpy()[0])]
+
+class OverexposedOrNot:
+    classes = ["not_overexposed", "overexposed"]
+
+    def __init__(self, path):
+        self.IMAGE_SIZE = 128
+        self.transform = transforms.Compose([
+            transforms.Resize((self.IMAGE_SIZE, self.IMAGE_SIZE)),
+            transforms.ToTensor()
+        ])
+        self.model = SimpleCNN(num_classes=2)
+        self.model.load_state_dict(torch.load('overexposed_model.pth', map_location=torch.device('cpu')))
+        self.model.eval()
+
+    def predict(self, pil_image):
+        x = self.transform(pil_image).unsqueeze(0)
+        with torch.no_grad():
+            output = self.model(x)
+            pred = (output > 0.5).item()
+        return OverexposedOrNot.classes[int(pred)]
