@@ -123,16 +123,16 @@ class CarCropper:
         self.model = model if model is not None else YOLO('yolov8n.pt')
 
     def crop(self, pil_image):
-        # Convert PIL image to OpenCV format (numpy array, BGR)
+
+        # Convert PIL image to OpenCV format (BGR)
         img = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
         height, width = img.shape[:2]
 
         results = self.model(img, verbose=False)
 
-        # Find largest car (YOLO class 2)
+        # Find the largest car (YOLO class 2)
         largest_area = 0
         largest_bbox = None
-
         for bbox, cls in zip(results[0].boxes.xyxy, results[0].boxes.cls):
             if int(cls) == 2:
                 x1, y1, x2, y2 = map(int, bbox)
@@ -148,7 +148,7 @@ class CarCropper:
         car_width = x2 - x1
         car_height = y2 - y1
 
-        # Calculate margins
+        # Compute margins
         left_margin = int(self.margin_ratios["left"] * car_width)
         right_margin = int(self.margin_ratios["right"] * car_width)
         vert_margin_ratio = max(self.margin_ratios["left"], self.margin_ratios["right"])
@@ -159,7 +159,7 @@ class CarCropper:
         height_with_margins = car_height + top_margin + bottom_margin
         initial_ratio = width_with_margins / height_with_margins
 
-        # Adjust margins for aspect ratio
+        # Adjust margins to match target aspect ratio
         if initial_ratio > self.target_aspect_ratio:
             target_height = int(width_with_margins / self.target_aspect_ratio)
             extra = target_height - height_with_margins
@@ -172,41 +172,61 @@ class CarCropper:
             right_margin += extra // 2 + (extra % 2)
 
         new_x1 = x1 - left_margin
-        new_x2 = x2 + right_margin
         new_y1 = y1 - top_margin
+        new_x2 = x2 + right_margin
         new_y2 = y2 + bottom_margin
 
-        # Check boundary exceedance
-        pad_threshold_x = int(self.acceptance_limit * width)
-        pad_threshold_y = int(self.acceptance_limit * height)
+        # Calculate proportion of exceedance
+        exceed_left = -new_x1 / width if new_x1 < 0 else 0
+        exceed_right = (new_x2 - width) / width if new_x2 > width else 0
+        exceed_top = -new_y1 / height if new_y1 < 0 else 0
+        exceed_bottom = (new_y2 - height) / height if new_y2 > height else 0
 
-        exceeds_left = -new_x1 > pad_threshold_x
-        exceeds_right = (new_x2 - width) > pad_threshold_x
-        exceeds_top = -new_y1 > pad_threshold_y
-        exceeds_bottom = (new_y2 - height) > pad_threshold_y
+        exceeds_critically = any([
+            exceed_left > self.acceptance_limit,
+            exceed_right > self.acceptance_limit,
+            exceed_top > self.acceptance_limit,
+            exceed_bottom > self.acceptance_limit
+        ])
 
-        exceeds_critically = exceeds_left or exceeds_right or exceeds_top or exceeds_bottom
+        if not exceeds_critically:
+            # Crop directly within bounds
+            cropped = img[max(0, new_y1):min(height, new_y2), max(0, new_x1):min(width, new_x2)]
+            return Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)), "Success"
 
-        # Clamp coordinates to image size
-        crop_x1 = max(0, new_x1)
-        crop_y1 = max(0, new_y1)
-        crop_x2 = min(width, new_x2)
-        crop_y2 = min(height, new_y2)
+        # If critically exceeds, add padding
+        pad_left = max(0, -new_x1)
+        pad_top = max(0, -new_y1)
+        pad_right = max(0, new_x2 - width)
+        pad_bottom = max(0, new_y2 - height)
 
-        cropped_img = img[crop_y1:crop_y2, crop_x1:crop_x2]
+        new_width = width + pad_left + pad_right
+        new_height = height + pad_top + pad_bottom
+        expanded_img = np.full((new_height, new_width, 3), 128, dtype=np.uint8)
 
-        # Convert back to PIL for consistency
-        pil_cropped = Image.fromarray(cv2.cvtColor(cropped_img, cv2.COLOR_BGR2RGB))
+        # Place original image into gray canvas
+        expanded_img[pad_top:pad_top + height, pad_left:pad_left + width] = img
 
-        if exceeds_critically:
-            status = "Make more space to " + ", to ".join([
-                side for side, flag in zip(
-                    ["the left", "the right", "the top", "the bottom"],
-                    [exceeds_left, exceeds_right, exceeds_top, exceeds_bottom]
-                ) if flag
-            ])
-        else:
-            status = "Success"
+        # Adjust box coordinates to new image
+        adj_x1 = x1 + pad_left
+        adj_y1 = y1 + pad_top
+        adj_x2 = x2 + pad_left
+        adj_y2 = y2 + pad_top
+        crop_x1 = new_x1 + pad_left
+        crop_y1 = new_y1 + pad_top
+        crop_x2 = new_x2 + pad_left
+        crop_y2 = new_y2 + pad_top
 
-        return pil_cropped, status
+        # Draw rectangles
+        cv2.rectangle(expanded_img, (adj_x1, adj_y1), (adj_x2, adj_y2), (255, 0, 0), 2)  # Blue: car box
+        cv2.rectangle(expanded_img, (crop_x1, crop_y1), (crop_x2, crop_y2), (0, 255, 0), 2)  # Green: crop box
+
+        sides_exceeded = []
+        if exceed_left > self.acceptance_limit: sides_exceeded.append("left")
+        if exceed_right > self.acceptance_limit: sides_exceeded.append("right")
+        if exceed_top > self.acceptance_limit: sides_exceeded.append("top")
+        if exceed_bottom > self.acceptance_limit: sides_exceeded.append("bottom")
+        status = f"Added gray space to {', '.join(sides_exceeded)}"
+
+        return Image.fromarray(cv2.cvtColor(expanded_img, cv2.COLOR_BGR2RGB)), status
 
