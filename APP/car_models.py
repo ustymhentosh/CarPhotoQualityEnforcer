@@ -135,6 +135,29 @@ class OverexposedOrNot:
         return OverexposedOrNot.classes[int(pred)]
 
 
+class OveredarkenedOrNot:
+    classes = ["not_too_dark", "too_dark"]
+
+    def __init__(self, path="./models/overdarkened_model.pth"):
+        self.IMAGE_SIZE = 128
+        self.transform = transforms.Compose(
+            [
+                transforms.Resize((self.IMAGE_SIZE, self.IMAGE_SIZE)),
+                transforms.ToTensor(),
+            ]
+        )
+        self.model = NotVeryBrightCNN()
+        self.model.load_state_dict(torch.load(path, map_location=torch.device("cpu")))
+        self.model.eval()
+
+    def predict(self, pil_image):
+        x = self.transform(pil_image).unsqueeze(0)
+        with torch.no_grad():
+            output = self.model(x)
+            pred = (output > 0.5).item()
+        return OveredarkenedOrNot.classes[int(pred)]
+
+
 class CarChopper:
     def __init__(
         self,
@@ -153,7 +176,7 @@ class CarChopper:
         self.acceptance_limit = acceptance_limit
         self.margin_ratios = margin_ratios
         self.target_aspect_ratio = target_aspect_ratio
-        self.model = model if model is not None else YOLO("yolov8n.pt")
+        self.model = model if model is not None else YOLO("./models/yolov8n.pt")
 
     def crop(self, pil_image):
 
