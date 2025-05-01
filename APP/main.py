@@ -79,16 +79,20 @@ with col1:
             if car_or_not_model.predict(image_) != "car" or car_position_model.crop(image_)[1] == "No car detected":
                 # print("image rotated ", i, " times")
                 # st.image(np.array(image_.rotate(i*90, expand=True)))
+                if i == 1:
+                    st.header("No car detected")
+                    st.image(np.array(image_))
                 if car_or_not_model.predict(image_.rotate(i*90, expand=True)) == "car" and car_position_model.crop(image_.rotate(i*90, expand=True))[1] != "No car detected":
-                    st.write(f"Image rotated {i} times")
+                    st.header(f"Car detected after rotating the image")
+                    print(f"Image rotated {i} times, car detected")
                     image = image_.rotate(i*90, expand=True)
                     st.image(np.array(image))
                     break
                 elif i == 4:
                     print("image rotated ", i, " times, no car detected")
-                    st.header("No car detected")
+                    # st.header("No car detected")
                     no_car = True
-                    st.image(np.array(image_))
+                    # st.image(np.array(image_))
                     image = image_
             else:
                 image = image_
@@ -113,9 +117,13 @@ with col2:
     if proceed:
         car_or_not_prediction = car_or_not_model.predict(image)
         if car_or_not_prediction == "car":
-            st.success("Success - car found", icon="✅")
+            if no_car:
+                st.warning("Car found, but not detected", icon="️⚠️")
+            else:
+                st.success("Success - car found", icon="✅")
         else:
             st.error("Fail - no car found", icon="🚨")
+        print(f"Ustyms: {car_or_not_prediction}, \n YOLO: {car_position_model.crop(image)[1]}")
 
     ## Croping Proces
     if proceed:
