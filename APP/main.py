@@ -71,7 +71,29 @@ with col1:
     )
     if uploaded_file is not None:
         bytes_image = uploaded_file.getvalue()
-        st.image(bytes_image)
+        image_data = bytes_image
+        image_ = Image.open(io.BytesIO(image_data))
+        image_ = image_.convert("RGB")
+        no_car=False
+        for i in range(1,5):
+            if car_or_not_model.predict(image_) != "car" or car_position_model.crop(image_)[1] == "No car detected":
+                # print("image rotated ", i, " times")
+                # st.image(np.array(image_.rotate(i*90, expand=True)))
+                if car_or_not_model.predict(image_.rotate(i*90, expand=True)) == "car" and car_position_model.crop(image_.rotate(i*90, expand=True))[1] != "No car detected":
+                    st.write(f"Image rotated {i} times")
+                    image = image_.rotate(i*90, expand=True)
+                    st.image(np.array(image))
+                    break
+                elif i == 4:
+                    print("image rotated ", i, " times, no car detected")
+                    st.header("No car detected")
+                    no_car = True
+                    st.image(np.array(image_))
+                    image = image_
+            else:
+                image = image_
+                st.image(np.array(image))
+                break
 
 with col2:
     st.header("Assesment")
@@ -79,9 +101,10 @@ with col2:
 
     proceed = False
     if uploaded_file:
-        image_data = bytes_image
-        image = Image.open(io.BytesIO(image_data))
-        image = image.convert("RGB")
+        # if image:
+        #     image_data = bytes_image
+        #     image = Image.open(io.BytesIO(image_data))
+        #     image = image.convert("RGB")
         proceed = True
 
     ## Car not car
@@ -165,15 +188,24 @@ with col2:
         new_image, car_position_result = car_position_model.crop(image)
         print(car_position_result)
         if car_position_result == "Success":
-            st.success(car_position_result, icon="✅")
+            if not no_car:
+                st.success(car_position_result, icon="✅")
+            else:
+                st.warning("No car detected", icon="⚠️")
             with col1:
-                st.write(f"#### Final Image")
-                st.image(np.array(new_image))
+                if not no_car:
+                    st.write(f"#### Final Image")
+                    st.image(np.array(new_image))
         else:
-            st.warning(car_position_result, icon="⚠️")
+            if not no_car:
+                st.warning(car_position_result, icon="⚠️")
+            else:
+                st.warning("No car detected", icon="⚠️")
             with col1:
-                st.write(f"#### Recommended Image Expansion")
-                st.image(np.array(new_image))
+                if not no_car:
+                    st.write(f"#### Recommended Image Expansion")
+                    st.image(np.array(new_image))
+
 
     ### Quality Test
     st.write(f"#### Quality Check")
